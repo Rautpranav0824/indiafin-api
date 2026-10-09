@@ -1,6 +1,6 @@
-package com.pranav.indiafin_api.dto;
+package com.pranav.indiafin_api.model;
 
-public record IfscResponse(
+public record Branch(
         String ifsc,
         String bank,
         String branch,
@@ -14,5 +14,6 @@ public record IfscResponse(
         boolean rtgs,
         boolean imps,
         boolean upi
-) {
+    ){
+
 }
