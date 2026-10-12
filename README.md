@@ -35,11 +35,13 @@ The API starts on `http://localhost:8080`. On startup it loads about 183,000 bra
 |---|---|---|---|
 | GET | `/ping` | Health check | Done |
 | GET | `/ifsc/{code}` | Look up a bank branch by IFSC code | Done |
-| GET | `/gstin/{number}` | Validate a GSTIN | Planned |
-| GET | `/pan/{number}` | Validate a PAN | Planned |
+| GET | `/pan/{number}` | Validate a PAN and return the holder type | Done |
+| GET | `/gstin/{number}` | Validate a GSTIN (format and checksum), return state code and PAN | Done |
 | GET | `/pincode/{code}` | Pincode lookup | Planned |
 
-### Example: `GET /ifsc/SBIN0000001`
+All identifiers are case-insensitive.
+
+### IFSC: `GET /ifsc/SBIN0000001`
 ```json
 {
   "ifsc": "SBIN0000001",
@@ -58,23 +60,50 @@ The API starts on `http://localhost:8080`. On startup it loads about 183,000 bra
 }
 ```
 
-Codes are case-insensitive: `/ifsc/sbin0000001` returns the same result.
+An IFSC is 11 characters: 4 letters (bank code), the digit `0`, then 6 letters or digits (branch code).
+
+### PAN: `GET /pan/ABCPE1234F`
+```json
+{
+  "pan": "ABCPE1234F",
+  "valid": true,
+  "entityType": "Individual"
+}
+```
+
+A PAN is 10 characters: 5 letters, 4 digits, 1 letter. The 4th character is the holder type (`P` Individual, `C` Company, `H` Hindu Undivided Family, `F` Firm, `A` Association of Persons, `T` Trust, `B` Body of Individuals, `L` Local Authority, `J` Artificial Juridical Person, `G` Government).
+
+### GSTIN: `GET /gstin/27AAPFU0939F1ZV`
+```json
+{
+  "gstin": "27AAPFU0939F1ZV",
+  "valid": true,
+  "stateCode": "27",
+  "pan": "AAPFU0939F"
+}
+```
+
+A GSTIN is 15 characters: a 2-digit state code, the holder's 10-character PAN, an entity number, the letter `Z`, and a check character. The check character is verified with the official checksum algorithm, so mistyped numbers are rejected even when the format looks right.
+
+> PAN and GSTIN validation confirms that a number is correctly **formed** (and, for GSTIN, that its checksum matches). It does **not** confirm that the number is registered to a real person or business.
 
 ### Errors
 
 All errors use the same JSON shape.
 
-`400 Bad Request` when the IFSC format is invalid (`GET /ifsc/hello`):
+`400 Bad Request` for an invalid format (`GET /pan/hello`):
 ```json
 {
   "status": 400,
   "error": "Bad Request",
-  "message": "Invalid IFSC Code Format",
+  "message": "Invalid PAN format",
   "timestamp": "2026-10-09T05:10:41.512344Z"
 }
 ```
 
-`404 Not Found` when the format is valid but the code is not in the dataset (`GET /ifsc/ABCD0123456`):
+`400 Bad Request` for a GSTIN with the right format but a wrong checksum (`GET /gstin/27ABCPE1234F1Z5`), with the message `Invalid GSTIN checksum`.
+
+`404 Not Found` when an IFSC has a valid format but is not in the dataset (`GET /ifsc/ABCD0123456`):
 ```json
 {
   "status": 404,
@@ -84,9 +113,6 @@ All errors use the same JSON shape.
 }
 ```
 
-## IFSC format
-An IFSC is 11 characters: 4 letters (bank code), the digit `0`, then 6 letters or digits (branch code). Example: `SBIN0001234`.
-
 ## Data source
 IFSC data is derived from RBI publications, compiled in the open-source [razorpay/ifsc](https://github.com/razorpay/ifsc) dataset. Some small co-operative banks have no bank name in the source data, so `bank` can be `null`. Always verify critical payment details with the bank.
 
@@ -94,7 +120,9 @@ IFSC data is derived from RBI publications, compiled in the open-source [razorpa
 - [x] Project setup and health check
 - [x] IFSC format validation and consistent error responses
 - [x] Real IFSC data lookup
-- [ ] PAN, GSTIN and pincode endpoints
+- [x] PAN validation with holder type
+- [x] GSTIN validation with checksum
+- [ ] Pincode lookup
 - [ ] Unit and integration tests
 - [ ] API key auth and rate limiting
 - [ ] OpenAPI / Swagger docs
