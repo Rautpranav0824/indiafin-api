@@ -55,8 +55,8 @@ public class IfscService {
             branches.put(branch.ifsc(), branch);
         }
 
-        System.out.println("Loaded: " + branches.size());
-        System.out.println(branches.get("SBIN0000001"));
+//        System.out.println("Loaded: " + branches.size());
+//        System.out.println(branches.get("SBIN0000001"));
 
     }
     private String clean(String value) {
