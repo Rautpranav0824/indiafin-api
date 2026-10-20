@@ -5,10 +5,12 @@ A Spring Boot REST API for validating and looking up Indian financial and postal
 > Work in progress. Built step by step as a learning project.
 
 ## Tech stack
-- Java 17+
+- Java 21
 - Spring Boot 4.1.1
 - Maven
-- Apache Commons CSV
+- Apache Commons CSV (dataset loading)
+- Bucket4j (rate limiting)
+- JUnit 5 and MockMvc (tests)
 
 ## Run locally
 
@@ -22,26 +24,60 @@ cd indiafin-api
 
    **IFSC:** download `IFSC.csv` from the [latest release of razorpay/ifsc](https://github.com/razorpay/ifsc/releases) and place it at:
 ```
-src/main/resources/data/IFSC.csv
+   src/main/resources/data/IFSC.csv
 ```
 
 **Pincode:** download the "All India Pincode Directory" CSV from [data.gov.in](https://www.data.gov.in/catalog/all-india-pincode-directory), rename it to `pincodes.csv` and place it at:
 ```
-src/main/resources/data/pincodes.csv
+   src/main/resources/data/pincodes.csv
 ```
 The pincode file must have these lowercase column names: `circlename, regionname, divisionname, officename, pincode, officetype, delivery, district, statename, latitude, longitude`.
 
-3. Start the app
+3. Set your API key. The app **refuses to start without one**, and there is no default key. Generate a random one:
+```bash
+   openssl rand -hex 32
+```
+Then provide it in either of these ways:
+
+- **Environment variable:**
+```bash
+     export INDIAFIN_API_KEY=<your key>
+```
+- **Local config file** (ignored by git, so the key never gets committed). Create `config/application.properties` in the project folder:
+```properties
+     indiafin.api-key=<your key>
+```
+
+4. Start the app
 ```bash
 ./mvnw spring-boot:run
 ```
 The API starts on `http://localhost:8080`. On startup it loads about 183,000 bank branches and about 165,000 post offices into memory, so lookups are instant.
 
+## Authentication
+
+Every endpoint except `/ping` requires your key in the `X-API-Key` header:
+
+```bash
+curl -H "X-API-Key: <your key>" http://localhost:8080/ifsc/SBIN0000001
+```
+
+A missing or wrong key returns `401 Unauthorized`.
+
+## Rate limiting
+
+Requests are limited per client with a token bucket (Bucket4j). By default a client can send a burst of **10** requests, then **5 per second** after that. When the limit is exceeded the API returns `429 Too Many Requests` with a `Retry-After` header (in seconds).
+
+- The client is identified by the `X-RapidAPI-User` header when present, otherwise by its IP address.
+- `/ping` is not rate limited.
+- The limits can be changed with `indiafin.rate-limit.capacity` and `indiafin.rate-limit.refill-per-second`.
+- Limits are kept in memory, so they apply per running server instance.
+
 ## Endpoints
 
 | Method | Path | Description | Status |
 |---|---|---|---|
-| GET | `/ping` | Health check | Done |
+| GET | `/ping` | Health check (no key needed) | Done |
 | GET | `/ifsc/{code}` | Look up a bank branch by IFSC code | Done |
 | GET | `/pan/{number}` | Validate a PAN and return the holder type | Done |
 | GET | `/gstin/{number}` | Validate a GSTIN (format and checksum), return state code and PAN | Done |
@@ -140,11 +176,21 @@ All errors use the same JSON shape.
   "status": 400,
   "error": "Bad Request",
   "message": "Invalid PAN format",
-  "timestamp": "2026-10-13T05:10:41.512344Z"
+  "timestamp": "2026-10-20T05:10:41.512344Z"
 }
 ```
 
-`400 Bad Request` for a GSTIN with the right format but a wrong checksum (`GET /gstin/27ABCPE1234F1Z5`), with the message `Invalid GSTIN checksum`.
+`400 Bad Request` for a GSTIN with the right format but a wrong checksum (`GET /gstin/27AAPFU0939F1ZX`), with the message `Invalid GSTIN checksum`.
+
+`401 Unauthorized` for a missing or invalid API key:
+```json
+{
+  "status": 401,
+  "error": "Unauthorized",
+  "message": "Missing or invalid API key",
+  "timestamp": "2026-10-20T05:10:41.512344Z"
+}
+```
 
 `404 Not Found` when an IFSC or pincode has a valid format but is not in the dataset (`GET /ifsc/ABCD0123456` or `GET /pincode/999999`):
 ```json
@@ -152,9 +198,27 @@ All errors use the same JSON shape.
   "status": 404,
   "error": "Not Found",
   "message": "IFSC code not found",
-  "timestamp": "2026-10-13T05:11:02.103871Z"
+  "timestamp": "2026-10-20T05:11:02.103871Z"
 }
 ```
+
+`429 Too Many Requests` when the rate limit is exceeded, with a `Retry-After` header:
+```json
+{
+  "status": 429,
+  "error": "Too Many Requests",
+  "message": "Rate limit exceeded",
+  "timestamp": "2026-10-20T05:12:15.884438Z"
+}
+```
+
+## Tests
+
+```bash
+./mvnw test
+```
+
+The tests start the application with their own test API key and generous rate limits, so they do not need your real key. They do load the real datasets, so the two CSV files must be in place first.
 
 ## Data sources
 - **IFSC:** derived from RBI publications, compiled in the open-source [razorpay/ifsc](https://github.com/razorpay/ifsc) dataset. Some small co-operative banks have no bank name in the source data, so `bank` can be `null`. Always verify critical payment details with the bank.
@@ -167,13 +231,18 @@ All errors use the same JSON shape.
 - [x] PAN validation with holder type
 - [x] GSTIN validation with checksum
 - [x] Pincode lookup
-- [ ] Unit and integration tests
-- [ ] API key auth and rate limiting
+- [x] API key authentication
+- [x] Rate limiting (token bucket, per client)
+- [x] Tests for IFSC, PAN, GSTIN and the checksum
+- [ ] Tests for pincode, the API key filter and the rate limit filter
 - [ ] OpenAPI / Swagger docs
 - [ ] Docker and deployment
 - [ ] Listing on an API marketplace
 
 ## Changelog
+- **2026-10-20:** Removed the default API key (the app now refuses to start without one), made rate limits configurable, and added test settings.
+- **2026-10-19:** Added rate limiting with Bucket4j (`429` with `Retry-After`).
+- **2026-10-15:** Added API key authentication (`X-API-Key` header) and endpoint tests.
 - **2026-10-13:** Added the pincode endpoint (about 19,600 pincodes grouped from about 165,000 post offices). Fixed a startup crash caused by coordinates written in degrees/minutes/seconds, which now load as `null`.
 - **2026-10-09:** Added PAN validation and GSTIN validation with checksum.
 - **2026-10-08:** Project setup, IFSC lookup with real data, consistent error format.
