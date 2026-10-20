@@ -29,7 +29,7 @@ public class PanControllerTest {
     @Test
     void invalidPanReturns400() throws Exception {
         mockMvc.perform(get("/pan/hello").header("X-API-Key", "test-key"))
-                .andExpect(status().isOk())
+                .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Invalid PAN format"));
     }
 }

@@ -36,3 +36,6 @@ build/
 src/main/resources/data/IFSC.csv
 src/main/resources/data/banks.json
 src/main/resources/data/pincodes.csv
+config/
+
+config/

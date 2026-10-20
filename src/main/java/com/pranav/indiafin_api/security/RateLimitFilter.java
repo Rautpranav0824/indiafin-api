@@ -1,6 +1,6 @@
 package com.pranav.indiafin_api.security;
 
-import com.pranav.indiafin_api.ratelimit.TokenBucket;
+import com.pranav.indiafin_api.ratelimit.RateLimiter;
 import io.github.bucket4j.ConsumptionProbe;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -17,10 +17,10 @@ import java.time.Instant;
 @Order(2)
 public class RateLimitFilter extends OncePerRequestFilter {
 
-    private final TokenBucket tokenBucket;
+    private final RateLimiter rateLimiter;
 
-    public RateLimitFilter(TokenBucket tokenBucket) {
-        this.tokenBucket = tokenBucket;
+    public RateLimitFilter(RateLimiter rateLimiter) {
+        this.rateLimiter = rateLimiter;
     }
 
     @Override
@@ -38,7 +38,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             clientId = request.getRemoteAddr();
         }
 
-        ConsumptionProbe probe = tokenBucket.tryConsume(clientId);
+        ConsumptionProbe probe = rateLimiter.tryConsume(clientId);
 
         if (probe.isConsumed()) {
             chain.doFilter(request, response);
